@@ -1,0 +1,6 @@
+{
+  "name": "BSC NFT Contract Analyzer",
+  "description": "An application to analyze and display the history of NFTs from a given BSC contract, including transfers, inferred sales, and other interactions by fetching data from the BSCScan API.",
+  "requestFramePermissions": [],
+  "prompt": ""
+}
