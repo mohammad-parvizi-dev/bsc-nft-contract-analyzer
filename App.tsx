@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback } from 'react';
 import InputForm from './components/InputForm';
 import NftDisplay from './components/NftDisplay';
@@ -6,6 +5,8 @@ import LoadingSpinner from './components/LoadingSpinner';
 import ErrorMessage from './components/ErrorMessage';
 import { NftActivityHistory, GeneralMarketplaceActivity } from './types';
 import { processNftData } from './utils/bscscanHelper';
+
+const APP_VERSION = "2.0.4";
 
 const App: React.FC = () => {
   const [nftActivity, setNftActivity] = useState<NftActivityHistory | null>(null);
@@ -62,6 +63,9 @@ const App: React.FC = () => {
       <footer className="text-center mt-12 py-6 border-t border-gray-700">
         <p className="text-sm text-gray-500">
           Data fetched from BSCScan API. Interpretations are based on common patterns and heuristics, and may not cover all scenarios or be fully accurate without specific contract ABI.
+        </p>
+        <p className="text-xs text-gray-500 mt-2">
+          Version: {APP_VERSION}
         </p>
       </footer>
     </div>
