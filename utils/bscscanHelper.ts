@@ -1,4 +1,3 @@
-
 import { BSCSCAN_API_URL, WBNB_ADDRESS, ERC20_TRANSFER_EVENT_SIGNATURE, RATE_LIMIT_DELAY_MS, MARKETPLACE_FUNCTION_KEYWORDS, FEE_COLLECTION_WALLET_ADDRESS } from '../constants';
 import { 
   BscScanApiResponse, BscScanTx, BscScanNormalTx, TxReceipt, 
@@ -301,6 +300,7 @@ export const processNftData = async (
     }
     
     let specificTokenId: string | undefined;
+    let specificNftContract: string | undefined;
     let parsedExpiryTimestamp: number | undefined;
     const inputData = tx.input.startsWith('0x') ? tx.input.substring(2) : tx.input;
     const methodIdHex = inputData.substring(0, 8).toLowerCase();
@@ -310,6 +310,7 @@ export const processNftData = async (
         const paramsString = inputData.substring(8);
         if (paramsString.length >= 64 * 6) { 
             try {
+                specificNftContract = '0x' + paramsString.substring(24, 64 * 1);
                 specificTokenId = BigInt('0x' + paramsString.substring(64 * 1, 64 * 2)).toString();
                 const durationSeconds = parseInt(BigInt('0x' + paramsString.substring(64 * 5, 64 * 6)).toString());
                 if (!isNaN(durationSeconds) && durationSeconds > 0) {
@@ -321,6 +322,7 @@ export const processNftData = async (
         const paramsString = inputData.substring(8);
         if (paramsString.length >= 64 * 5) {
              try {
+                specificNftContract = '0x' + paramsString.substring(24, 64 * 1);
                 specificTokenId = BigInt('0x' + paramsString.substring(64 * 1, 64 * 2)).toString(); // TokenID is 2nd param (index 1)
                 const durationSeconds = parseInt(BigInt('0x' + paramsString.substring(64 * 4, 64 * 5)).toString()); // Duration is 5th param (index 4)
                 if (!isNaN(durationSeconds) && durationSeconds > 0) {
@@ -328,11 +330,11 @@ export const processNftData = async (
                 }
             } catch (e) { console.warn(`Error parsing input for createAuctionWithoutReservePrice (tx: ${tx.hash}):`, e); }
         }
-    } else if (methodIdHex === '68905116' && eventType === EventType.PURCHASE_INTENT) { // finalizeAuction(address _seller, uint256 _tokenId)
+    } else if (methodIdHex === '68905116' && eventType === EventType.PURCHASE_INTENT) { // finalizeAuction(address _nftContract, uint256 _tokenId)
         const paramsString = inputData.substring(8);
         if (paramsString.length >= 64 * 2) {
             try {
-                // const sellerAddress = '0x' + paramsString.substring(24 + 64 * 0, 64 * 1); // Not strictly needed for event interpretation here
+                specificNftContract = '0x' + paramsString.substring(24, 64 * 1);
                 specificTokenId = BigInt('0x' + paramsString.substring(64 * 1, 64 * 2)).toString(); // TokenID is 2nd param (index 1)
             } catch (e) { console.warn(`Error parsing input for finalizeAuction (tx: ${tx.hash}):`, e); }
         }
@@ -348,10 +350,15 @@ export const processNftData = async (
     }
 
     // Associate with NFT transfers in the same tx if tokenId wasn't in function call
-    if (!specificTokenId) {
+    if (!specificTokenId || !specificNftContract) {
         const nftTransfersInSameTx = nftTransfers.filter(nftTx => nftTx.hash === tx.hash);
         if (nftTransfersInSameTx.length > 0) {
-            specificTokenId = nftTransfersInSameTx[0].tokenID;
+            if (!specificTokenId) {
+                specificTokenId = nftTransfersInSameTx[0].tokenID;
+            }
+            if (!specificNftContract) {
+                specificNftContract = nftTransfersInSameTx[0].contractAddress;
+            }
         }
     }
 
@@ -359,6 +366,7 @@ export const processNftData = async (
         gasUsed: tx.gasUsed,
         gasPrice: tx.gasPrice,
         inputData: tx.input.substring(0, 10) + (tx.input.length > 10 ? '...' : ''),
+        nftContract: specificNftContract,
     };
     if (txFeeDetailsMap[tx.hash]) {
         eventDetails.feePaidToSystem = txFeeDetailsMap[tx.hash];
@@ -383,13 +391,14 @@ export const processNftData = async (
   allInterpretedEvents.sort((a,b) => a.timestamp - b.timestamp);
 
   for (const event of allInterpretedEvents) {
-    if (event.tokenId) {
-      if (!nftActivity[event.tokenId]) {
-        nftActivity[event.tokenId] = [];
+    if (event.tokenId && event.details?.nftContract) {
+      const compositeKey = `${event.details.nftContract.toLowerCase()}-${event.tokenId}`;
+      if (!nftActivity[compositeKey]) {
+        nftActivity[compositeKey] = [];
       }
-      const existingEventIndex = nftActivity[event.tokenId].findIndex(e => e.transactionHash === event.transactionHash && e.type === event.type && e.logInitiator === event.logInitiator && JSON.stringify(e.details) === JSON.stringify(event.details));
+      const existingEventIndex = nftActivity[compositeKey].findIndex(e => e.transactionHash === event.transactionHash && e.type === event.type && e.logInitiator === event.logInitiator && JSON.stringify(e.details) === JSON.stringify(event.details));
       if(existingEventIndex === -1) {
-         nftActivity[event.tokenId].push(event);
+         nftActivity[compositeKey].push(event);
       }
     } else if (
         event.type === EventType.GENERAL_MARKETPLACE_INTERACTION ||
@@ -405,8 +414,8 @@ export const processNftData = async (
     }
   }
   
-  for (const tokenId in nftActivity) {
-    nftActivity[tokenId].sort((a, b) => {
+  for (const compositeKey in nftActivity) {
+    nftActivity[compositeKey].sort((a, b) => {
       if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
       // Define a preferred order for events within the same timestamp to ensure listing intents/transfers come first
       const typeOrder = [

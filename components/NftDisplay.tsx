@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo } from 'react';
 import { NftActivityHistory, GeneralMarketplaceActivity, InterpretedEvent, EventType, NftMarketStatus, NftOverallStatus } from '../types';
 import EventCard from './EventCard';
@@ -20,6 +19,7 @@ interface DisplayableListingCycle {
   tokenName?: string;
   tokenSymbol?: string;
   firstEventTimestamp: number;
+  nftContractAddress: string;
 }
 
 const getMarketplaceAddressFromEvents = (events: InterpretedEvent[], preferredMarketplace?: string): string | undefined => {
@@ -339,9 +339,11 @@ const NftDisplay: React.FC<NftDisplayProps> = ({ nftActivity, generalActivity, a
     const cycles: DisplayableListingCycle[] = [];
     if (!nftActivity) return cycles;
 
-    Object.keys(nftActivity).forEach(tokenId => {
-      const allTokenEvents = nftActivity[tokenId]; 
+    Object.keys(nftActivity).forEach(compositeKey => {
+      const allTokenEvents = nftActivity[compositeKey]; 
       if (!allTokenEvents || allTokenEvents.length === 0) return;
+
+      const [nftContractAddress, tokenId] = compositeKey.split('-');
 
       const inferredMarketplaceForToken = getMarketplaceAddressFromEvents(allTokenEvents, analyzedContractAddress);
 
@@ -386,8 +388,9 @@ const NftDisplay: React.FC<NftDisplayProps> = ({ nftActivity, generalActivity, a
           if (currentCycleEvents.length > 0) { 
             const status = determineNftMarketStatus(currentCycleEvents, inferredMarketplaceForToken, globalTokenName, globalTokenSymbol);
             cycles.push({
-              uniqueCycleId: `${tokenId}-${listingNumber}-${currentCycleEvents[0].timestamp}`,
+              uniqueCycleId: `${compositeKey}-${listingNumber}-${currentCycleEvents[0].timestamp}`,
               tokenId,
+              nftContractAddress,
               listingNumber,
               events: [...currentCycleEvents], 
               status,
@@ -421,8 +424,9 @@ const NftDisplay: React.FC<NftDisplayProps> = ({ nftActivity, generalActivity, a
       if (currentCycleEvents.length > 0 && listingNumber > 0) {
         const status = determineNftMarketStatus(currentCycleEvents, inferredMarketplaceForToken, globalTokenName, globalTokenSymbol);
         cycles.push({
-          uniqueCycleId: `${tokenId}-${listingNumber}-${currentCycleEvents[0].timestamp}`,
+          uniqueCycleId: `${compositeKey}-${listingNumber}-${currentCycleEvents[0].timestamp}`,
           tokenId,
+          nftContractAddress,
           listingNumber,
           events: currentCycleEvents,
           status,
@@ -434,6 +438,9 @@ const NftDisplay: React.FC<NftDisplayProps> = ({ nftActivity, generalActivity, a
     });
 
     cycles.sort((a, b) => {
+      if (a.nftContractAddress.localeCompare(b.nftContractAddress) !== 0) {
+        return a.nftContractAddress.localeCompare(b.nftContractAddress);
+      }
       const numA = parseInt(a.tokenId);
       const numB = parseInt(b.tokenId);
       if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
@@ -459,6 +466,7 @@ const NftDisplay: React.FC<NftDisplayProps> = ({ nftActivity, generalActivity, a
             const termLower = searchTerm.toLowerCase();
             matchesSearch =
                 cycle.tokenId.toLowerCase().includes(termLower) ||
+                cycle.nftContractAddress.toLowerCase().includes(termLower) ||
                 (cycle.tokenName || '').toLowerCase().includes(termLower) ||
                 (cycle.tokenSymbol || '').toLowerCase().includes(termLower) ||
                 (cycle.status.lastLister || '').toLowerCase().includes(termLower) ||
@@ -517,11 +525,11 @@ const NftDisplay: React.FC<NftDisplayProps> = ({ nftActivity, generalActivity, a
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <input
                 type="text"
-                placeholder="Search ID, Name, Tx Hash, Wallets..."
+                placeholder="Search ID, Contract, Name, Tx, Wallets..."
                 className="input-dark w-full px-3 py-2 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                aria-label="Search NFT listings by ID, name, transaction hash, or wallet address"
+                aria-label="Search NFT listings by ID, contract address, name, transaction hash, or wallet address"
               />
               <select
                 className="input-dark w-full px-3 py-2 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -553,7 +561,7 @@ const NftDisplay: React.FC<NftDisplayProps> = ({ nftActivity, generalActivity, a
           )}
 
           {filteredAndSortedDisplayableListingCycles.map(cycle => {
-            const { uniqueCycleId, tokenId, listingNumber, events: cycleEvents, status: overallStatus, tokenName, tokenSymbol } = cycle;
+            const { uniqueCycleId, tokenId, listingNumber, events: cycleEvents, status: overallStatus, tokenName, tokenSymbol, nftContractAddress } = cycle;
             
             const displayName = tokenName || 'NFT';
             const displaySymbol = tokenSymbol ? `(${tokenSymbol})` : '';
@@ -614,7 +622,10 @@ const NftDisplay: React.FC<NftDisplayProps> = ({ nftActivity, generalActivity, a
                           Token ID: {tokenId} <span className="font-normal">(Listing #{listingNumber})</span>
                           <span className="text-lg font-normal ml-2 opacity-90 truncate hidden sm:inline">{displayName} {displaySymbol}</span>
                         </h3>
-                        <p className="text-sm opacity-80 truncate" title={`${statusPrimaryInfo} - ${statusSecondaryInfo}`}>
+                        <p className="text-xs opacity-80 truncate" title={`NFT Contract: ${nftContractAddress}`}>
+                            From: <a href={`https://bscscan.com/token/${nftContractAddress}?a=${tokenId}`} target="_blank" rel="noopener noreferrer" className="hover:underline font-mono">{formatAddress(nftContractAddress)}</a>
+                        </p>
+                        <p className="text-sm opacity-90 truncate mt-1" title={`${statusPrimaryInfo} - ${statusSecondaryInfo}`}>
                            {statusPrimaryInfo} <span className="opacity-80 hidden md:inline">- {statusSecondaryInfo}</span>
                         </p>
                       </div>
