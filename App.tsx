@@ -6,7 +6,7 @@ import ErrorMessage from './components/ErrorMessage';
 import { NftActivityHistory, GeneralMarketplaceActivity } from './types';
 import { processNftData } from './utils/bscscanHelper';
 
-const APP_VERSION = "2.0.4";
+const APP_VERSION = "2.1.2";
 
 const App: React.FC = () => {
   const [nftActivity, setNftActivity] = useState<NftActivityHistory | null>(null);
